@@ -10,7 +10,7 @@
       "site_branding": "OpenStack Dashboard",
       "site_theme": "",
       "site_branding_link": "",
-      "help_url": "http://docs.openstack.org/",
+      "help_url": "/help/",
       "session_timeout": 240,
       "db": {
         "database": "horizon",
