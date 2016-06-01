@@ -1,0 +1,24 @@
+= attributes_for @proposal do
+  .panel-sub
+    = header show_raw_deployment?, true
+
+  .panel-body
+    = instance_field :rabbitmq
+    = instance_field :database
+    = instance_field :keystone
+    = string_field :enable_keystone_listener
+    = string_field :group
+    = string_field :user
+
+    %fieldset
+      %legend
+        = t('.api_header')
+      = string_field %w(api bind_host)
+      = integer_field %w(api bind_port)
+
+    %fieldset
+      %legend
+        = t('.db_header')
+      = string_field %w(db database)
+      = string_field %w(db user)
+      = string_field %w(db password)

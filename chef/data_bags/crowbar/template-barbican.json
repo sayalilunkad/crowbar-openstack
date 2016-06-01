@@ -1,0 +1,55 @@
+{
+  "id": "template-barbican",
+  "description": "Key and Secret Management Service for OpenStack",
+  "attributes": {
+     "barbican" : {
+        "api" : {
+           "bind_host" : "*",
+           "bind_port" : 9311,
+           "logfile" : "/var/log/barbican/barbican-api.log",
+           "processes" : 3,
+           "ssl" : false,
+           "threads" : 10
+        },
+        "db" : {
+           "database" : "barbican",
+           "password" : "",
+           "user" : "barbican"
+        },
+        "debug" : false,
+        "enable_keystone_listener" : false,
+        "group" : "barbican",
+        "kek" : "none",
+        "user" : "barbican",
+        "workers" : 1,
+        "database_instance": "none",
+        "keystone_instance": "none",
+        "rabbitmq_instance": "none",
+        "service_password": "none",
+        "service_user": "barbican"
+     }
+  },
+  "deployment": {
+    "barbican" : {
+      "crowbar-revision": 0,
+      "crowbar-applied": false,
+      "schema-revision": 100,
+      "element_states": {
+        "barbican-server": [ "readying", "ready", "applying" ]
+      },
+      "elements": {},
+      "element_order": [
+        [ "barbican-server" ]
+      ],
+      "element_run_list_order": {
+          "barbican-server": 110
+      },
+      "config": {
+        "environment": "barbican-base-config",
+        "mode": "full",
+        "transitions": false,
+        "transition_list": []
+      }
+    }
+  }
+}
