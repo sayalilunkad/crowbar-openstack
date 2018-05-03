@@ -54,9 +54,13 @@ node[:ironic][:platform][:packages].each do |p|
 end
 
 node[:ironic][:enabled_drivers].each do |d|
-  driver_dependencies = node[:ironic][:platform][:driver_dependencies][d] || []
-  driver_dependencies.each do |p|
-    package p
+  if d.include?('ssh')
+    node[:ironic][:enabled_drivers].delete(d)
+  else
+    driver_dependencies = node[:ironic][:platform][:driver_dependencies][d] || []
+    driver_dependencies.each do |p|
+      package p
+    end
   end
 end
 
