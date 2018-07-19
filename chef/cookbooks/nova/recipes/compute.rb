@@ -109,6 +109,20 @@ case node[:nova][:libvirt_type]
               package "qemu-block-rbd"
             end
 
+            execute "enable kvm intel nested virt" do
+              command <<-SHELL
+                  grep -q nested /etc/modprobe.d/80-kvm-intel.conf ||
+                    echo "options kvm_intel nested=1" > /etc/modprobe.d/80-kvm-intel.conf
+                  ! grep -q N /sys/module/kvm_intel/parameters/nested ||
+                    /sbin/modprobe -r kvm_intel
+              SHELL
+              only_if do
+                node[:nova][:kvm][:nested_virt] &&
+                  `uname -r`.include?("default") &&
+                  system("grep -qw vmx /proc/cpuinfo")
+              end
+            end
+
             # load modules only when appropriate kernel is present
             execute "loading kvm modules" do
               command <<-EOF
@@ -341,8 +355,8 @@ template "/usr/sbin/crowbar-compute-set-sys-options" do
   source "crowbar-compute-set-sys-options.erb"
   variables({
     ksm_enabled: node[:nova][:kvm][:ksm_enabled] ? 1 : 0,
-    tranparent_hugepage_enabled: node[:nova][:kvm][:ksm_enabled] ? "never" : "always",
-    tranparent_hugepage_defrag: node[:nova][:kvm][:ksm_enabled] ? "never" : "always"
+    transparent_hugepage_enabled: node[:nova][:kvm][:ksm_enabled] ? "never" : "always",
+    transparent_hugepage_defrag: node[:nova][:kvm][:ksm_enabled] ? "never" : "madvise"
   })
   mode "0755"
 end

@@ -23,10 +23,13 @@ action :wakeup do
   # Lets verify that the service does not exist yet
   count = 0
   error = true
-  while error and count < 50 do
+  loop do
     count = count + 1
     _, error = _get_service_id(http, headers, "fred")
-    sleep 1 if error
+    break unless error && count < 50
+    sleep 1
+    next unless new_resource.reissue_token_on_error
+    http, headers = _build_connection(new_resource)
   end
 
   raise "Failed to validate keystone is wake" if error
@@ -513,16 +516,27 @@ def _get_token(http, user_name, password, project = "")
   path = "/v3/auth/tokens"
   headers = _build_headers
   body = _build_auth(user_name, password, project)
-  resp = http.send_request("POST", path, JSON.generate(body), headers)
-  if resp.is_a?(Net::HTTPCreated) || resp.is_a?(Net::HTTPOK)
-    resp["X-Subject-Token"]
-  else
+
+  resp = nil
+  count = 0
+  error = true
+  while error && count < 10
+    count += 1
+    Chef::Log.debug "Trying to get keystone token for user '#{user_name}' (try #{count})"
+    resp = http.send_request("POST", path, JSON.generate(body), headers)
+    error = !(resp.is_a?(Net::HTTPCreated) || resp.is_a?(Net::HTTPOK))
+    sleep 5 if error
+  end
+
+  if error
     msg = "Failed to get token for User '#{user_name}'"
     msg += " Project '#{project}'" unless project.empty?
     Chef::Log.info msg
     Chef::Log.info "Response Code: #{resp.code}"
     Chef::Log.info "Response Message: #{resp.message}"
     nil
+  else
+    resp["X-Subject-Token"]
   end
 end
 

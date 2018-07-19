@@ -108,8 +108,6 @@ execute "nova-manage create cell0" do
   group node[:nova][:group]
   command "nova-manage cell_v2 map_cell0"
   action :run
-  # TODO: Does not work on Newton (14.x.x). Remove when switched to Ocata
-  not_if 'rpm -qa --qf "%{VERSION}\n" openstack-nova|grep ^14\.'
   only_if do
     !node[:nova][:db_synced] &&
       (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node))
@@ -121,8 +119,6 @@ execute "nova-manage create cell1" do
   group node[:nova][:group]
   command "nova-manage cell_v2 create_cell --name cell1 --verbose"
   action :run
-  # TODO: Does not work on Newton (14.x.x). Remove when switched to Ocata
-  not_if 'rpm -qa --qf "%{VERSION}\n" openstack-nova|grep ^14\.'
   only_if do
     !node[:nova][:db_synced] &&
       (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node))
@@ -143,22 +139,19 @@ execute "nova-manage api_db sync" do
   end
 end
 
-execute "nova-manage db sync up to revision 329" do
+execute "nova-manage db sync" do
   user node[:nova][:user]
   group node[:nova][:group]
-  command "nova-manage db sync 329"
+  command "nova-manage db sync"
   action :run
   # We only do the sync the first time, and only if we're not doing HA or if we
   # are the founder of the HA cluster (so that it's really only done once).
   only_if do
     !node[:nova][:db_synced] &&
-      (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node)) &&
-      (`nova-manage --log-file /dev/null db version`.to_i < 329)
+      (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node))
   end
 end
 
-# Perform online migrations up to revision 329 (the ones for later revisions
-# will fail. These errors can probably be ignored (hence the ignore_failure usage)
 execute "nova-manage db online_data_migrations" do
   user node[:nova][:user]
   group node[:nova][:group]
@@ -167,31 +160,20 @@ execute "nova-manage db online_data_migrations" do
   action :run
   only_if do
     !node[:nova][:db_synced] &&
-      (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node)) &&
-      (`nova-manage --log-file /dev/null db version`.to_i == 329)
-  end
-end
-
-# Update Nova DB to latest revision
-execute "nova-manage db sync" do
-  user node[:nova][:user]
-  group node[:nova][:group]
-  command "nova-manage db sync"
-  action :run
-  only_if do
-    !node[:nova][:db_synced] &&
       (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node))
   end
 end
 
-# Run online migration again to cover the ones that failed in the first pass.
-execute "nova-manage db online_data_migrations (continue)" do
+# Right after controller is upgraded to Pike, explicitely map the instances to cell1
+execute "nova-manage cell_v2 map_instances" do
   user node[:nova][:user]
   group node[:nova][:group]
-  command "nova-manage db online_data_migrations"
+  command "nova-manage cell_v2 map_instances --cell_uuid \ " \
+    "$(nova-manage cell_v2 list_cells 2>&1 | grep cell1 | tr -d '\n' | awk '{print $4}')"
   action :run
   only_if do
     !node[:nova][:db_synced] &&
+      CrowbarPacemakerHelper.being_upgraded?(node) &&
       (!node[:nova][:ha][:enabled] || CrowbarPacemakerHelper.is_cluster_founder?(node))
   end
 end
@@ -205,8 +187,7 @@ ruby_block "mark node for nova db_sync" do
     node.set[:nova][:db_synced] = true
     node.save
   end
-  action :nothing
-  subscribes :create, "execute[nova-manage db sync]", :immediately
+  not_if { node[:nova][:db_synced] }
 end
 
 # We want to keep a note that we've done db_sync, so we don't do it again.
