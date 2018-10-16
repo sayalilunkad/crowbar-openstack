@@ -110,7 +110,7 @@ memcached_instance("heat-server")
 
 keystone_settings = KeystoneHelper.keystone_settings(node, @cookbook_name)
 
-bind_host, api_port, cfn_port, cloud_watch_port = HeatHelper.get_bind_host_port(node)
+bind_host, api_port, cfn_port = HeatHelper.get_bind_host_port(node)
 
 my_admin_host = CrowbarHelper.get_host_for_admin_url(node, ha_enabled)
 my_public_host = CrowbarHelper.get_host_for_public_url(node, node[:heat][:api][:protocol] == "https", ha_enabled)
@@ -130,6 +130,7 @@ keystone_register "heat wakeup keystone" do
   port keystone_settings["admin_port"]
   auth register_auth_hash
   action :wakeup
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 keystone_register "register heat user" do
@@ -142,6 +143,7 @@ keystone_register "register heat user" do
   user_password keystone_settings["service_password"]
   project_name keystone_settings["service_tenant"]
   action :add_user
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 keystone_register "give heat user access" do
@@ -154,6 +156,7 @@ keystone_register "give heat user access" do
   project_name keystone_settings["service_tenant"]
   role_name "admin"
   action :add_access
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 keystone_register "add heat stack user role" do
@@ -164,6 +167,7 @@ keystone_register "add heat stack user role" do
   auth register_auth_hash
   role_name "heat_stack_user"
   action :add_role
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 node[:heat][:trusts_delegated_roles].each do |role|
@@ -175,6 +179,7 @@ node[:heat][:trusts_delegated_roles].each do |role|
     auth register_auth_hash
     role_name role
     action :add_role
+    only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
   end
 
   keystone_register "give admin access to stack owner role #{role}" do
@@ -187,6 +192,7 @@ node[:heat][:trusts_delegated_roles].each do |role|
     project_name keystone_settings["default_tenant"]
     role_name role
     action :add_access
+    only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
   end
 end
 
@@ -287,6 +293,7 @@ bash "register heat domain" do
     "OS_REGION_NAME" => keystone_settings["endpoint_region"],
     "OS_IDENTITY_API_VERSION" => "3"
   })
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 # Create Heat CloudFormation service
@@ -300,6 +307,7 @@ keystone_register "register Heat CloudFormation Service" do
   service_type "cloudformation"
   service_description "Heat CloudFormation Service"
   action :add_service
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 keystone_register "register heat Cfn endpoint" do
@@ -314,6 +322,7 @@ keystone_register "register heat Cfn endpoint" do
   endpoint_adminURL "#{node[:heat][:api][:protocol]}://#{my_admin_host}:#{node[:heat][:api][:cfn_port]}/v1"
   endpoint_internalURL "#{node[:heat][:api][:protocol]}://#{my_admin_host}:#{node[:heat][:api][:cfn_port]}/v1"
   action :add_endpoint
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 # Create Heat service
@@ -327,6 +336,7 @@ keystone_register "register Heat Service" do
   service_type "orchestration"
   service_description "Heat Service"
   action :add_service
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 keystone_register "register heat endpoint" do
@@ -347,6 +357,7 @@ keystone_register "register heat endpoint" do
                        "#{my_admin_host}:"\
                        "#{node[:heat][:api][:port]}/v1/$(project_id)s"
   action :add_endpoint
+  only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
 
 crowbar_pacemaker_sync_mark "create-heat_register" if ha_enabled
@@ -383,12 +394,10 @@ template "/etc/heat/heat.conf.d/100-heat.conf" do
         database_connection: db_connection,
         bind_host: bind_host,
         api_port: api_port,
-        cloud_watch_port: cloud_watch_port,
         cfn_port: cfn_port,
         auth_encryption_key: node[:heat][:auth_encryption_key][0, 32],
         heat_metadata_server_url: "#{node[:heat][:api][:protocol]}://#{my_public_host}:#{node[:heat][:api][:cfn_port]}",
         heat_waitcondition_server_url: "#{node[:heat][:api][:protocol]}://#{my_public_host}:#{node[:heat][:api][:cfn_port]}/v1/waitcondition",
-        heat_watch_server_url: "#{node[:heat][:api][:protocol]}://#{my_public_host}:#{node[:heat][:api][:cloud_watch_port]}",
         stack_user_domain: node[:heat][:stack_user_domain_id],
         stack_domain_admin: node[:heat]["stack_domain_admin"],
         stack_domain_admin_password: node[:heat]["stack_domain_admin_password"],
@@ -467,17 +476,6 @@ service "heat-api-cfn" do
   provider Chef::Provider::CrowbarPacemakerService if use_crowbar_pacemaker_service
 end
 utils_systemd_service_restart "heat-api-cfn" do
-  action use_crowbar_pacemaker_service ? :disable : :enable
-end
-
-service "heat-api-cloudwatch" do
-  service_name node[:heat][:api_cloudwatch][:service_name]
-  supports status: true, restart: true
-  action [:enable, :start]
-  subscribes :restart, resources("template[/etc/heat/heat.conf.d/100-heat.conf]")
-  provider Chef::Provider::CrowbarPacemakerService if use_crowbar_pacemaker_service
-end
-utils_systemd_service_restart "heat-api-cloudwatch" do
   action use_crowbar_pacemaker_service ? :disable : :enable
 end
 

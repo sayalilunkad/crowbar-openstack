@@ -31,8 +31,9 @@ default[:mysql][:ha][:ports][:admin_port] = 3306
 
 # Default operation setting for the galera resource
 # in pacemamker
-default[:mysql][:ha][:op][:monitor][:interval] = "20s"
-default[:mysql][:ha][:op][:monitor][:role]     = "Master"
+default[:mysql][:ha][:op][:monitor] = [
+  { interval: "23s" }, { interval: "20s", role: "Master" }
+]
 
 # If needed we can enhance this to set the mariadb version
 # depeding on "platform" and "platform_version". But currently
@@ -46,7 +47,7 @@ default[:mysql][:galera_packages] = [
   "galera-python-clustercheck"
 ]
 
-# newer version need an additional package on SLES
-unless node[:mysql][:mariadb][:version] == "10.1"
-  default[:mysql][:galera_packages] << "mariadb-galera"
-end
+default[:mysql][:galera_packages] << "mariadb-galera"
+
+default[:mysql][:mysql_client] = "mariadb-client"
+default[:mysql][:mysql_server] = "mariadb"

@@ -280,7 +280,7 @@ action :add_endpoint do
     body = _build_endpoint_object(interface, my_service_id, new_resource)
     name = "#{interface} endpoint for '#{new_resource.endpoint_service}'"
     path = "/v3/endpoints"
-    if endpoints.empty?
+    if !endpoints.key? interface
       _create_item(http, headers, path, body, name)
       endpoint_updated = true
     elsif endpoint_needs_update interface, endpoints, new_resource
@@ -524,8 +524,9 @@ def _get_token(http, user_name, password, project = "")
     count += 1
     Chef::Log.debug "Trying to get keystone token for user '#{user_name}' (try #{count})"
     resp = http.send_request("POST", path, JSON.generate(body), headers)
-    error = !(resp.is_a?(Net::HTTPCreated) || resp.is_a?(Net::HTTPOK))
-    sleep 5 if error
+    error = !resp.is_a?(Net::HTTPSuccess)
+    # retry on any 5XX (server error) error code but not on 4XX (client error)
+    sleep 5 if resp.is_a?(Net::HTTPServerError)
   end
 
   if error

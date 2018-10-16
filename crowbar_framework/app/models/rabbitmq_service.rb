@@ -33,7 +33,7 @@ class RabbitmqService < OpenstackServiceObject
           "unique" => false,
           "count" => 1,
           "exclude_platform" => {
-            "suse" => "< 12.3",
+            "suse" => "< 12.4",
             "windows" => "/.*/"
           },
           "cluster" => true
@@ -83,11 +83,11 @@ class RabbitmqService < OpenstackServiceObject
         permissions: user["permissions"]
       }
       if !old_attrs.nil? && old_attrs.include?("users") && !old_attrs["users"].each.select do |u|
-        u["username"] == user["username"]
+        u["username"] == username
       end.empty?
         # reuse the existing pass
         pass = old_attrs["users"].each.select do |u|
-          u["username"] == user["username"]
+          u["username"] == username
         end.first["password"]
 
         updated_user.update(password: pass)

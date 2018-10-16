@@ -33,10 +33,21 @@ if node[:horizon][:apache][:ssl]
   end.run_action(:create)
 end
 
+# Once HAProxy is taking care of :80 and :443 we need to remove this
+# from Apache realm.  This requires update the node information from
+# Apache, and maybe the listen.conf file
+if node[:apache][:listen_ports].include?("80") || node[:apache][:listen_ports].include?("443")
+  node.set[:apache][:listen_ports] = []
+  node.save
+  include_recipe "apache2::default"
+end
+
 # Wait for all nodes to reach this point so we know that all nodes will have
 # all the required packages installed before we create the pacemaker
 # resources
-crowbar_pacemaker_sync_mark "sync-horizon_before_ha"
+crowbar_pacemaker_sync_mark "sync-horizon_before_ha" do
+  timeout 150
+end
 
 # no wait/create sync mark as it's done in crowbar-pacemaker itself
 

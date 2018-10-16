@@ -57,21 +57,23 @@ if use_l3_agent
   # skip neutron-ha-tool resource creation during upgrade
   unless CrowbarPacemakerHelper.being_upgraded?(node)
 
-    # FIXME: neutron-ha-tool can't do keystone v3 currently
-    os_auth_url_v2 = KeystoneHelper.versioned_service_URL(keystone_settings["protocol"],
+    os_auth_url = KeystoneHelper.versioned_service_URL(keystone_settings["protocol"],
                                                           keystone_settings["internal_url_host"],
                                                           keystone_settings["service_port"],
-                                                          "2.0")
+                                                          keystone_settings["api_version"])
 
     # Add configuration file
     insecure_flag = keystone_settings["insecure"] || node[:neutron][:ssl][:insecure]
     default_settings = node[:neutron][:ha][:neutron_l3_ha_service].to_hash
     config_file_contents = NeutronHelper.make_l3_ha_service_config default_settings,
                                                                    insecure_flag do |env|
-      env["OS_AUTH_URL"] = os_auth_url_v2
+      env["OS_AUTH_URL"] = os_auth_url
+      env["OS_AUTH_VERSION"] = keystone_settings["api_version"]
       env["OS_REGION_NAME"] = keystone_settings["endpoint_region"]
-      env["OS_TENANT_NAME"] = keystone_settings["service_project"]
+      env["OS_PROJECT_NAME"] = keystone_settings["service_project"]
       env["OS_USERNAME"] = keystone_settings["service_user"]
+      env["OS_USER_DOMAIN_NAME"] = keystone_settings["default_user_domain"]
+      env["OS_PROJECT_DOMAIN_NAME"] = keystone_settings["default_user_domain"]
     end
 
     file "/etc/neutron/neutron-l3-ha-service.yaml" do
@@ -122,7 +124,9 @@ end
 crowbar_pacemaker_sync_mark "sync-neutron-agents_before_ha"
 
 # Avoid races when creating pacemaker resources
-crowbar_pacemaker_sync_mark "wait-neutron-agents_ha_resources"
+crowbar_pacemaker_sync_mark "wait-neutron-agents_ha_resources" do
+  timeout 90
+end
 
 if node[:pacemaker][:clone_stateless_services]
   transaction_objects = []
@@ -180,13 +184,21 @@ if node[:pacemaker][:clone_stateless_services]
     l3_agent_clone = "cl-#{l3_agent_primitive}"
   end
 
-  if use_metadata_agent
-    metadata_agent_primitive = "neutron-metadata-agent"
+  enable_metadata = node.roles.include?("neutron-network") || !node[:neutron][:metadata][:force]
+
+  metadata_agent_primitive = "neutron-metadata-agent"
+  if use_metadata_agent && enable_metadata
     objects = openstack_pacemaker_controller_clone_for_transaction metadata_agent_primitive do
       agent node[:neutron][:ha][:network][:metadata_ra]
       op node[:neutron][:ha][:network][:op]
     end
     transaction_objects.push(objects)
+  else
+    pacemaker_primitive metadata_agent_primitive do
+      agent node[:neutron][:ha][:network][:metadata_ra]
+      action [:stop, :delete]
+      only_if "crm configure show #{metadata_agent_primitive}"
+    end
   end
 
   metering_agent_primitive = "neutron-metering-agent"

@@ -89,11 +89,21 @@ openstackcli_adm = "#{adm_environment} openstack --insecure"
 enabled_services = `#{openstackcli_adm} service list -f value -c Type`.split
 
 users = [
-          {"name" => tempest_comp_user, "pass" => tempest_comp_pass, "role" => "Member"},
+          {"name" => tempest_comp_user, "pass" => tempest_comp_pass, "role" => "member"},
           {"name" => tempest_adm_user, "pass" => tempest_adm_pass, "role" => "admin" }
         ]
 
 roles = [ 'anotherrole' ]
+
+if enabled_services.include?("metering")
+  rabbitmq_settings = fetch_rabbitmq_settings
+
+  unless rabbitmq_settings[:enable_notifications]
+    # without rabbitmq notification clients configured the ceilometer
+    # tempest tests will fail so skip them
+    enabled_services = enabled_services - ["metering"]
+  end
+end
 
 heat_server = search(:node, "roles:heat-server").first
 if enabled_services.include?("orchestration") && !heat_server.nil?

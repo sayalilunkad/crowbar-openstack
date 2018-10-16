@@ -53,7 +53,11 @@ end
 # service bind address.
 my_admin_host = CrowbarHelper.get_host_for_admin_url(node, ha_enabled)
 my_public_host = CrowbarHelper.get_host_for_public_url(node, node[:keystone][:api][:protocol] == "https", ha_enabled)
-cluster_nodes = CrowbarPacemakerHelper.cluster_nodes(node, "keystone-server")
+# can't use CrowbarPacemakerHelper.cluster_nodes() here as it will sometimes not return
+# nodes which will be added to the cluster in current chef-client run.
+cluster_nodes = ha_enabled ? node[:pacemaker][:elements]["pacemaker-cluster-member"] : []
+cluster_nodes = cluster_nodes.map { |n| Chef::Node.load(n) }
+cluster_nodes.sort_by! { |n| n[:hostname] }
 
 memcached_servers = MemcachedHelper.get_memcached_servers(
   ha_enabled ? cluster_nodes : [node]
@@ -77,6 +81,7 @@ if node[:keystone][:api][:protocol] == "https"
     keyfile node[:keystone][:ssl][:keyfile]
     group node[:keystone][:group]
     fqdn node[:fqdn]
+    alt_names ["DNS:#{my_admin_host}", "DNS:#{my_public_host}"]
     cert_required node[:keystone][:ssl][:cert_required]
     ca_certs node[:keystone][:ssl][:ca_certs]
   end
@@ -393,11 +398,17 @@ if node[:keystone][:token_format] == "fernet"
   crowbar_pacemaker_sync_mark "sync-keystone_install_rsync" if ha_enabled
 
   rsync_command = ""
+  initial_rsync_command = ""
   if ha_enabled
-    cluster_nodes.map do |n|
+    cluster_nodes.each do |n|
       next if node.name == n.name
       node_address = Chef::Recipe::Barclamp::Inventory.get_network_by_type(n, "admin").address
-      rsync_command += "/usr/bin/keystone-fernet-keys-push.sh #{node_address}; "
+      node_rsync_command = "/usr/bin/keystone-fernet-keys-push.sh #{node_address}; "
+      rsync_command += node_rsync_command
+      # initial rsync only for (new) nodes which didn't get the keys yet
+      next if n.include?(:keystone) &&
+          n[:keystone][:initial_keys_sync]
+      initial_rsync_command += node_rsync_command
     end
     raise "No other cluster members found" if rsync_command.empty?
   end
@@ -421,7 +432,13 @@ if node[:keystone][:token_format] == "fernet"
 
   crowbar_pacemaker_sync_mark "wait-keystone_fernet_rotate" if ha_enabled
 
-  unless File.exist?("/etc/keystone/fernet-keys/0")
+  if File.exist?("/etc/keystone/fernet-keys/0")
+    # Mark node to avoid unneeded future rsyncs
+    unless node[:keystone][:initial_keys_sync]
+      node[:keystone][:initial_keys_sync] = true
+      node.save
+    end
+  else
     # Setup a key repository for fernet tokens
     execute "keystone-manage fernet_setup" do
       command "keystone-manage fernet_setup \
@@ -430,12 +447,15 @@ if node[:keystone][:token_format] == "fernet"
       action :run
       only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
     end
+  end
 
-    # We would like to propagate fernet keys to all nodes in the cluster
-    execute "propagate fernet keys to all nodes in the cluster" do
-      command rsync_command
-      action :run
-      only_if { ha_enabled && CrowbarPacemakerHelper.is_cluster_founder?(node) }
+  # We would like to propagate fernet keys to all (new) nodes in the cluster
+  execute "propagate fernet keys to all nodes in the cluster" do
+    command initial_rsync_command
+    action :run
+    only_if do
+      ha_enabled && CrowbarPacemakerHelper.is_cluster_founder?(node) &&
+        !initial_rsync_command.empty?
     end
   end
 
@@ -619,14 +639,15 @@ if node[:keystone][:default][:create_user]
   end
 end
 
-# Create Member role used by horizon (see OPENSTACK_KEYSTONE_DEFAULT_ROLE option)
-keystone_register "add default Member role" do
+# Create member role used by horizon (see OPENSTACK_KEYSTONE_DEFAULT_ROLE option)
+### Remove after Rocky is required (keystone-bootstrap creates it for us)
+keystone_register "add default member role" do
   protocol node[:keystone][:api][:protocol]
   insecure keystone_insecure
   host my_admin_host
   port node[:keystone][:api][:admin_port]
   auth register_auth_hash
-  role_name "Member"
+  role_name "member"
   action :add_role
   only_if { !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node) }
 end
@@ -638,7 +659,7 @@ user_roles = [
 ]
 if node[:keystone][:default][:create_user]
   user_roles << [node[:keystone][:default][:username],
-                 "Member",
+                 "member",
                  node[:keystone][:default][:project]]
 end
 user_roles.each do |args|

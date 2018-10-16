@@ -102,13 +102,15 @@ execute "delay-flavor-creation" do
   action :nothing
 end
 
+package "python-openstackclient"
+
 ruby_block "Get current flavors" do
   block do
     cmd = Mixlib::ShellOut.new("#{openstack} flavor list -f value -c Name").run_command
     raise "Flavor list not obtained, is the nova-api down?" unless cmd.exitstatus.zero?
     node.run_state["flavorlist"] = cmd.stdout.split("\n")
   end
-  retries 5
+  retries 10
 end
 
 ruby_block "Flavor creation" do

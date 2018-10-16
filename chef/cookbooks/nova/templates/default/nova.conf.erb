@@ -78,6 +78,9 @@ zvm_user_profile = <%= node[:nova][:zvm][:zvm_user_profile] %>
 zvm_user_default_password = <%= node[:nova][:zvm][:zvm_user_default_password] %>
 zvm_user_default_privilege = <%= node[:nova][:zvm][:zvm_user_default_privilege] %>
 <% end %>
+<% unless @default_log_levels.length.zero? -%>
+default_log_levels = <%= @default_log_levels.join(", ") %>
+<% end -%>
 
 [api]
 auth_strategy = keystone
@@ -254,8 +257,10 @@ lock_path = /var/run/openstack
 lock_path = /var/run/nova
 <% end %>
 
+<% if @rabbit_settings[:enable_notifications] -%>
 [oslo_messaging_notifications]
 driver = messagingv2
+<% end -%>
 
 [oslo_messaging_rabbit]
 amqp_durable_queues = <%= @rabbit_settings[:durable_queues] %>
@@ -323,6 +328,9 @@ keep_alive = false
 
 [scheduler]
 discover_hosts_in_cells_interval = <%= node[:nova][:scheduler][:discover_hosts_in_cells_interval] %>
+max_attempts = 9
+# Avoid scheduler conflicts when using HA
+host_subset_size = 4
 <% if @libvirt_type.eql?('ironic') %>
 host_manager = ironic_host_manager
 <% end %>

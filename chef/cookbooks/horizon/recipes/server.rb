@@ -84,43 +84,6 @@ else
   end
 end
 
-
-# install horizon neutron fwaas plugin if needed
-neutron_fwaas_ui_pkgname =
-  case node[:platform_family]
-  when "suse"
-    "openstack-horizon-plugin-neutron-fwaas-ui"
-  when "rhel"
-    "openstack-neutron-fwaas-ui"
-  end
-
-unless neutron_fwaas_ui_pkgname.nil?
-  unless Barclamp::Config.load("openstack", "neutron").empty?
-    package neutron_fwaas_ui_pkgname do
-      action :install
-      notifies :reload, "service[horizon]"
-    end
-  end
-end
-
-# install horizon neutron lbaas plugin if needed
-neutron_lbaas_ui_pkgname =
-  case node[:platform_family]
-  when "suse"
-    "openstack-horizon-plugin-neutron-lbaas-ui"
-  when "rhel"
-    "openstack-neutron-lbaas-ui"
-  end
-
-unless neutron_lbaas_ui_pkgname.nil?
-  unless Barclamp::Config.load("openstack", "neutron").empty?
-    package neutron_lbaas_ui_pkgname do
-      action :install
-      notifies :reload, "service[horizon]"
-    end
-  end
-end
-
 # install horizon manila plugin if needed
 manila_ui_pkgname =
   case node[:platform_family]
@@ -151,24 +114,6 @@ magnum_ui_pkgname =
 unless magnum_ui_pkgname.nil?
   unless Barclamp::Config.load("openstack", "magnum").empty?
     package magnum_ui_pkgname do
-      action :install
-      notifies :reload, "service[horizon]"
-    end
-  end
-end
-
-# install horizon trove plugin if needed
-trove_ui_pkgname =
-  case node[:platform_family]
-  when "suse"
-    "openstack-horizon-plugin-trove-ui"
-  when "rhel"
-    "openstack-trove-ui"
-  end
-
-unless trove_ui_pkgname.nil?
-  unless Barclamp::Config.load("openstack", "trove").empty?
-    package trove_ui_pkgname do
       action :install
       notifies :reload, "service[horizon]"
     end
@@ -486,16 +431,47 @@ end
 
 include_recipe "horizon::ha" if ha_enabled
 
+# Type 1 synchronizarion. Only one node of the cluser will create the
+# certificates that will be transferred to the rest of the nodes
+crowbar_pacemaker_sync_mark "wait-horizon_ssl_sync" do
+  # Generate the certificate is a slow process, can timeout in the
+  # other nodes of the cluster
+  timeout 60 * 5
+end if ha_enabled
+
 if node[:horizon][:apache][:ssl] && node[:horizon][:apache][:generate_certs]
   package "apache2-utils"
 
   bash "Generate Apache certificate" do
     code <<-EOH
-      (umask 377 ; /usr/bin/gensslcert -C openstack-dashboard )
+      (umask 377 ; /usr/bin/gensslcert -C openstack-dashboard -n openstack-dashboard)
 EOH
-    not_if { File.size?(node[:horizon][:apache][:ssl_crt_file]) }
+    only_if do
+      !File.size?(node[:horizon][:apache][:ssl_crt_file]) && (
+        !ha_enabled || CrowbarPacemakerHelper.is_cluster_founder?(node))
+    end
+  end
+
+  if ha_enabled && CrowbarPacemakerHelper.is_cluster_founder?(node)
+    cluster_nodes = CrowbarPacemakerHelper.cluster_nodes(node, "horizon-server")
+    cluster_nodes.map do |n|
+      next if node.name == n.name
+      node_address = Chef::Recipe::Barclamp::Inventory.get_network_by_type(n, "admin").address
+      bash "Synchronize SSL cetificates" do
+        code <<-EOH
+          rsync -a /etc/apache2/ssl.key/ #{node_address}:/etc/apache2/ssl.key/
+          rsync -a /etc/apache2/ssl.crt/ #{node_address}:/etc/apache2/ssl.crt/
+          rsync -a /etc/apache2/ssl.csr/ #{node_address}:/etc/apache2/ssl.csr/
+          rsync -a /srv/www/htdocs/ #{node_address}:/srv/www/htdocs/
+          EOH
+        timeout 120
+        ignore_failure true
+      end
+    end
   end
 end
+
+crowbar_pacemaker_sync_mark "create-horizon_ssl_sync" if ha_enabled
 
 template "#{node[:apache][:dir]}/sites-available/openstack-dashboard.conf" do
   if node[:platform_family] == "suse"

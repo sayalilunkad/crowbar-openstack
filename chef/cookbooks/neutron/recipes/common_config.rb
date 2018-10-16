@@ -127,6 +127,7 @@ template neutron[:neutron][:config_file] do
     variables(
       sql_connection: is_neutron_server ? neutron[:neutron][:db][:sql_connection] : nil,
       sql_min_pool_size: neutron[:neutron][:sql][:min_pool_size],
+      sql_max_pool_size: neutron[:neutron][:sql][:max_pool_size],
       sql_max_pool_overflow: neutron[:neutron][:sql][:max_pool_overflow],
       sql_pool_timeout: neutron[:neutron][:sql][:pool_timeout],
       debug: neutron[:neutron][:debug],
@@ -154,7 +155,8 @@ template neutron[:neutron][:config_file] do
       infoblox: infoblox_settings,
       ipam_driver: ipam_driver,
       rpc_workers: neutron[:neutron][:rpc_workers],
-      use_apic_gbp: use_apic_gbp
+      use_apic_gbp: use_apic_gbp,
+      default_log_levels: neutron[:neutron][:default_log_levels]
     )
 end
 

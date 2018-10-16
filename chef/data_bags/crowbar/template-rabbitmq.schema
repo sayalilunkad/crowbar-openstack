@@ -48,7 +48,8 @@
               "type": "map",
               "required": true,
               "mapping" : {
-                "heartbeat_timeout": { "type": "int", "required": true }
+                "heartbeat_timeout": { "type": "int", "required": true },
+                "enable_notifications": { "type": "bool", "required": true }
               }
             },
             "cluster": { "type": "bool", "required": true },
@@ -115,6 +116,8 @@
               "required": true,
               "mapping": {
                 "backlog": { "type": "int", "required": true },
+                "nodelay": { "type": "bool", "required": false },
+                "keepalive": { "type": "bool", "required": false },
                 "sndbuf": { "type": "int", "required": false },
                 "recbuf": { "type": "int", "required": false }
               }

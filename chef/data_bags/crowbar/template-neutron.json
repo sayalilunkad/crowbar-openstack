@@ -12,7 +12,7 @@
       "create_default_networks": true,
       "dns_domain": "openstack.local",
       "rpc_workers": 1,
-      "use_lbaas": true,
+      "use_lbaas": false,
       "lbaasv2_driver": "haproxy",
       "allow_automatic_lbaas_agent_failover": true,
       "use_l2pop": false,
@@ -101,9 +101,9 @@
         "user": "neutron"
       },
       "sql": {
-        "min_pool_size": 30,
-        "max_pool_size": 60,
-        "max_pool_overflow": 10,
+        "min_pool_size": 1,
+        "max_pool_size": 50,
+        "max_pool_overflow": 50,
         "pool_timeout": 30
       },
       "f5": {
@@ -178,26 +178,33 @@
       },
       "ha_rate_limit": {
         "neutron-server": 0
-      }
+      },
+      "metadata": {
+        "force": false
+      },
+      "default_log_levels": []
     }
   },
   "deployment": {
     "neutron": {
       "crowbar-revision": 0,
       "crowbar-applied": false,
-      "schema-revision": 209,
+      "schema-revision": 302,
       "element_states": {
         "neutron-server": [ "readying", "ready", "applying" ],
-        "neutron-network": [ "readying", "ready", "applying" ]
+        "neutron-network": [ "readying", "ready", "applying" ],
+        "neutron-sdn-cisco-aci-agents": [ "readying", "ready", "applying" ]
       },
       "elements": {},
       "element_order": [
          ["neutron-server" ],
-         ["neutron-network" ]
+         ["neutron-network" ],
+         ["neutron-sdn-cisco-aci-agents" ]
       ],
       "element_run_list_order": {
         "neutron-server": 94,
-        "neutron-network": 95
+        "neutron-network": 95,
+        "neutron-sdn-cisco-aci-agents": 96
       },
       "config": {
         "environment": "neutron-config-base",
